@@ -1,17 +1,17 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
-# For SQLite, we need check_same_thread=False
-# If you use Postgres later, you'll remove that argument
+# Database engine configuration
 engine = create_engine(
     settings.DATABASE_URL, 
     connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
 )
 
+# Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 
+# Dependency to get DB session (moved to api/deps.py but keeping a backup here)
 def get_db():
     db = SessionLocal()
     try:

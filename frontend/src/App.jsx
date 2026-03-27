@@ -2,35 +2,51 @@ import { useEffect, useState } from 'react'
 import { DndContext, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { getIssues, createIssue, deleteIssue, updateIssue } from './api/issueService'
+// Assuming you create this small service to fetch projects
+import axios from 'axios' 
+
 import KanbanColumn from './components/KanbanColumn'
 import './App.css'
 
 function App() {
   const [issues, setIssues] = useState([])
+  const [projects, setProjects] = useState([]) // New: Store all projects
+  const [currentProjectId, setCurrentProjectId] = useState(4) // Start with your new project
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
-  
-  // Day 11: track which issue is being edited
   const [editingIssueId, setEditingIssueId] = useState(null)
-  const [formData, setFormData] = useState({ title: '', description: '', project_id: 2, status: 'To Do' })
+  const [formData, setFormData] = useState({ title: '', description: '', project_id: 4, status: 'To Do' })
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
-  const loadIssues = () => {
-    getIssues().then(setIssues).catch(err => console.error("Fetch error:", err))
+  // Load projects and issues
+  const loadData = async () => {
+    try {
+      // Fetch Projects for the dropdown
+      const projRes = await axios.get("http://127.0.0.1:8000/api/v1/projects/");
+      setProjects(projRes.data);
+      
+      // Fetch Issues
+      const issueRes = await getIssues();
+      setIssues(issueRes);
+    } catch (err) {
+      console.error("Fetch error:", err);
+    }
   }
 
-  useEffect(() => { loadIssues() }, [])
+  useEffect(() => { loadData() }, [])
 
+  // Filter by search term AND current project
   const filteredIssues = issues.filter(issue => 
-    issue.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    issue.description.toLowerCase().includes(searchTerm.toLowerCase())
+    issue.project_id === parseInt(currentProjectId) && (
+      issue.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      issue.description.toLowerCase().includes(searchTerm.toLowerCase())
+    )
   )
 
-  // Day 11: Trigger Edit Mode
   const handleEditClick = (issue) => {
     setEditingIssueId(issue.id)
     setFormData({ 
@@ -45,7 +61,7 @@ function App() {
   const handleCloseModal = () => {
     setShowModal(false)
     setEditingIssueId(null)
-    setFormData({ title: '', description: '', project_id: 2, status: 'To Do' })
+    setFormData({ title: '', description: '', project_id: currentProjectId, status: 'To Do' })
   }
 
   const handleDragEnd = async (event) => {
@@ -57,12 +73,11 @@ function App() {
     const issue = issues.find(i => i.id === issueId)
 
     if (issue && issue.status !== newStatus) {
-      // Optimistic Update
       setIssues(prev => prev.map(i => i.id === issueId ? { ...i, status: newStatus } : i))
       try {
         await updateIssue(issueId, { ...issue, status: newStatus })
       } catch (err) {
-        loadIssues() 
+        loadData() 
       }
     }
   }
@@ -71,14 +86,12 @@ function App() {
     e.preventDefault()
     try {
       if (editingIssueId) {
-        // UPDATE Existing
         await updateIssue(editingIssueId, formData)
       } else {
-        // CREATE New
-        await createIssue(formData)
+        await createIssue({ ...formData, project_id: currentProjectId })
       }
       handleCloseModal()
-      loadIssues()
+      loadData()
     } catch (err) {
       console.error("Save failed:", err)
     }
@@ -87,16 +100,27 @@ function App() {
   const handleDelete = async (id) => {
     if (window.confirm("Are you sure you want to delete this issue?")) {
       await deleteIssue(id)
-      loadIssues()
+      loadData()
     }
   }
 
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
-        <div>
-          <h1>🐞 Bug Tracker Kanban</h1>
-          <p>Managing issues for <strong>Project ID: 2</strong></p>
+        <div className="brand">
+          <h1>🐞 Bug Tracker</h1>
+          <div className="project-selector-wrapper">
+            <label>Project: </label>
+            <select 
+              value={currentProjectId} 
+              onChange={(e) => setCurrentProjectId(e.target.value)}
+              className="project-select"
+            >
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
         <div className="header-actions">
           <input 
@@ -114,9 +138,9 @@ function App() {
               key={status}
               id={status}
               title={status} 
-              issues={filteredIssues.filter(i => i.status === status || (!i.status && status === 'To Do'))} 
+              issues={filteredIssues.filter(i => i.status === status)} 
               onDelete={handleDelete}
-              onEdit={handleEditClick} // Day 11: Pass edit handler
+              onEdit={handleEditClick}
             />
           ))}
         </main>
